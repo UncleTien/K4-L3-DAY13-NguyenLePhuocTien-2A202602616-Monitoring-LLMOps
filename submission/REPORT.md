@@ -7,8 +7,8 @@
 - **Họ và tên:** Nguyễn Lê Phước Tiến
 - **MSSV:** 2A202602616
 - **Lớp:** K4-L3B
-- **Repository URL:**
-- **Commit SHA cuối:**
+- **Repository URL:** `https://github.com/UncleTien/K4-L3-DAY13-NguyenLePhuocTien-2A202602616-Monitoring-LLMOps`
+- **Commit SHA cuối:** `b5067d8`
 - **Challenge ID:** `day13-k4-l3b-monitoring-llmops-v1`
 - **Tên project Langfuse cá nhân:** `day13-k4-l3b-02616`
 
