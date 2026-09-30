@@ -1,0 +1,62 @@
+=== CP3 INCIDENT INVESTIGATION — day13-k4-l3b-monitoring-llmops-v1 ===
+Challenge ID  : day13-k4-l3b-monitoring-llmops-v1
+Cohort        : K4
+Incident type : rag_slow
+Seed          : 1312
+Affected feat : monitoring
+Window        : 2026-09-30T08:42:32Z – 2026-09-30T08:42:45Z
+
+--- METRIC ANOMALY ---
+  Metric             Baseline          Incident (5 req)    Ratio
+  latency_ms (avg)   ~160 ms           2,665 ms            ~16.7x
+  latency_ms (range) 155–165 ms        2656–2672 ms        —
+  ttft_ms            ~55 ms            52–55 ms            1.0x  (unchanged)
+  cost_usd           ~0.0025 USD       ~0.0022 USD         1.0x  (unchanged)
+  tokens_out         ~163              ~143                ~1.0x (unchanged)
+  error_rate         0%                0%                  —
+
+  Diagnosis: latency_ms tang ~16.7x; TTFT, cost va token KHONG thay doi.
+  => Bottleneck nam o buoc RETRIEVAL (truoc LLM), khong phai generation.
+
+--- AFFECTED REQUESTS (challenge run) ---
+  correlation_id   session              feature     latency_ms  ts
+  req-739e800f     k4-l3b-challenge-s03 monitoring  2656        2026-09-30T08:42:32.417473Z
+  req-ac6a94fb     k4-l3b-challenge-s04 monitoring  2665        2026-09-30T08:42:35.079133Z
+  req-44802f84     k4-l3b-challenge-s02 monitoring  2666        2026-09-30T08:42:37.747283Z
+  req-c2267e74     k4-l3b-challenge-s05 monitoring  2672        2026-09-30T08:42:40.415110Z
+  req-ec11af68     k4-l3b-challenge-s01 monitoring  2665        2026-09-30T08:42:43.088463Z
+
+--- KEY DISTINGUISHING SIGNALS ---
+  - latency_ms >> 2000ms (vuot nguong latency_threshold_ms=2000 trong challenge.json)
+  - ttft_ms binh thuong (52-55ms) => LLM khong bi anh huong
+  - tool_name=retrieval, tool_success=true => RAG thanh cong nhung CHAM
+  - cost va token binh thuong => khong phai cost_spike
+  - khong co request_failed => khong phai tool_fail
+
+--- ROOT CAUSE ---
+  Flag 'rag_slow' = True trong incidents.STATE.
+  app/mock_rag.py: if STATE['rag_slow']: time.sleep(2.5)
+  => Ham retrieve() sleep 2.5 giay truoc khi tra ve docs.
+  => Latency tang them ~2500ms cho moi request qua retrieval span.
+  => TTFT va cost khong thay doi vi LLM generate() binh thuong.
+  => Latency cuoi cung = 2656-2672ms = 2500ms sleep + ~160ms xu ly binh thuong.
+
+--- TRACE EVIDENCE ---
+  Span bi anh huong: 'retrieval' (child observation cua 'lab-agent-run')
+  Span 'generation': binh thuong (TTFT 52-55ms, tokens binh thuong).
+  Lien ket log->trace: metadata.correlation_id = correlation_id trong structured log.
+  Vi du: req-739e800f -> trace 'day13-agent-request' trong project day13-k4-l3b-02616,
+         span 'retrieval' co duration ~2500ms bat thuong.
+
+--- FIX ACTION ---
+  Immediate : POST /incidents/rag_slow/disable -> khoi phuc retrieve() ve binh thuong.
+  Code fix  : Xoa 'if STATE[rag_slow]: time.sleep(2.5)' trong mock_rag.py.
+              Production: them timeout va circuit breaker cho vector store calls.
+
+--- PREVENTIVE MEASURE ---
+  1. Alert HighLatencyP95: latency_ms P95 > 2000ms trong 5 phut -> Slack #k4-l3b-alerts.
+  2. Alert RetrievalSlowdown: retrieval span duration P95 > 1000ms trong 5 phut -> on-call.
+  3. Runbook docs/alerts.md: kiem tra /health -> incidents, goi /disable, verify latency.
+  4. Timeout: them timeout=1.0s cho retrieve() de fail fast thay vi hang.
+  5. Circuit breaker: sau 3 lan cham lien tiep, fallback ve general answer khong dung RAG.
+  6. SLO gate: CI load test phai pass latency P95 < 500ms, fail neu gap rag_slow.
